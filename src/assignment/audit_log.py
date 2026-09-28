@@ -27,7 +27,15 @@ class AuditLogPlugin:
 
     def record_input(self, *, user_id: str, text: str, request_id: str | None = None):
         """TODO: store input + start timestamp keyed by request_id/user_id."""
-        raise NotImplementedError("Implement AuditLogPlugin.record_input")
+        request_key = request_id or user_id
+        self._open[request_key] = datetime.now(timezone.utc).timestamp()
+        self.logs.append({
+            "event": "input",
+            "request_id": request_key,
+            "user_id": user_id,
+            "text": text,
+            "timestamp": utc_now_iso(),
+        })
 
     def record_output(
         self,
@@ -39,14 +47,29 @@ class AuditLogPlugin:
         request_id: str | None = None,
     ):
         """TODO: store output, layer decision, latency; append to self.logs."""
-        raise NotImplementedError("Implement AuditLogPlugin.record_output")
+        request_key = request_id or user_id
+        started = self._open.pop(request_key, None)
+        latency_ms = None
+        if started is not None:
+            latency_ms = round(
+                (datetime.now(timezone.utc).timestamp() - started) * 1000, 3
+            )
+        self.logs.append({
+            "event": "output",
+            "request_id": request_key,
+            "user_id": user_id,
+            "text": text,
+            "blocked": blocked,
+            "layer": layer,
+            "latency_ms": latency_ms,
+            "timestamp": utc_now_iso(),
+        })
 
     def export_json(self, filepath: str | None = None):
         """Write logs to disk (JSON array) under repo-root ``outputs/`` by default."""
-        # TODO: path = filepath or default_audit_log_path()
-        #       ensure parent dirs exist, dump self.logs with indent=2
-        _ = filepath or default_audit_log_path()
-        raise NotImplementedError("Implement AuditLogPlugin.export_json")
+        path = Path(filepath or default_audit_log_path())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.logs, indent=2), encoding="utf-8")
 
 
 def utc_now_iso() -> str:
